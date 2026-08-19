@@ -47,7 +47,17 @@ async def init_db():
         ''')
         await db.commit()
 
-# --- ЖЕКЕ КОЛДОНУУЧУНУН ДАННЫЙЫН ТАЗАЛОО ФУНКЦИЯЛАРЫ ---
+# --- БАЗАНЫ ЖАНА ДАННЫЙЛАРДЫ ТАЗАЛОО ФУНКЦИЯЛАРЫ ---
+
+async def clear_all_data():
+    """Маалымат базасындагы бардык таблицаларды толугу менен тазалайт"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("DELETE FROM users")
+        await db.execute("DELETE FROM categories")
+        await db.execute("DELETE FROM groups")
+        await db.execute("DELETE FROM group_members")
+        await db.execute("DELETE FROM logs")
+        await db.commit()
 
 async def clear_user_logs(user_id: int):
     """Бир гана ошол колдонуучунун окуган барактарынын тарыхын (логдорду) өчүрөт"""
@@ -61,7 +71,6 @@ async def clear_user_full_data(user_id: int):
     - Өзүнүн окуган барактар тарыхы (logs)
     - Өзүнүн гана категориялары (categories)
     - Топтордон чыгуусу (group_members)
-    Башка колдонуучуларга жана топторго эч кандай таасирин тийгизбейт.
     """
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("DELETE FROM logs WHERE user_id = ?", (user_id,))
@@ -162,7 +171,6 @@ async def join_group_by_pin(user_id: int, pin: str):
             
         for cat in admin_cats:
             c_title = cat[0]
-            # Кайталанып кошулуп калуудан коргоо (эгер мурда кошулган болсо кайра кошулбайт)
             async with db.execute(
                 "SELECT id FROM categories WHERE user_id = ? AND group_id = ? AND title = ?",
                 (user_id, group_id, c_title)
