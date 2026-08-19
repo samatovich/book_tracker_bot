@@ -45,15 +45,18 @@ def cancel_kb():
 @router.message(Command("reset"))
 @router.message(F.text.startswith("/reset"))
 async def cmd_reset(message: types.Message, state: FSMContext):
-    await state.clear()
-    await db.clear_all_data()
-    await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
-    
-    await message.answer(
-        "🧹 **Маалымат базасы толугу менен тазаланды!**",
-        parse_mode="Markdown",
-        reply_markup=main_kb()
-    )
+    try:
+        await state.clear()
+        await db.clear_all_data()
+        await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
+        
+        await message.answer(
+            "🧹 **Маалымат базасы толугу менен тазаланды!**",
+            parse_mode="Markdown",
+            reply_markup=main_kb()
+        )
+    except Exception as e:
+        await message.answer(f"⚠️ **Базада ката чыкты:**\n`{e}`", parse_mode="Markdown")
 
 @router.message(Command("cancel"))
 @router.message(F.text == "❌ Отмена")
