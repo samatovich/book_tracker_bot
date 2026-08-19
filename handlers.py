@@ -42,11 +42,13 @@ def cancel_kb():
     )
 
 # --- РЕСЕТ КОМАНДАСЫ (/reset болуп өзгөртүлдү) ---
+# --- РЕСЕТ КОМАНДАСЫ ---
 @router.message(Command("reset"))
 @router.message(F.text.startswith("/reset"))
 async def cmd_reset(message: types.Message, state: FSMContext):
     try:
         await state.clear()
+        # database.py ичиндеги clear_all_data() функциясын чакыруу
         await db.clear_all_data()
         await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
         
