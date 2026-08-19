@@ -1,7 +1,7 @@
 aiogram>=3.17.0
-gspread
-google-auth
 aiohttp
 aiosqlite
 python-dotenv
 openpyxl
+gspread
+google-auth
