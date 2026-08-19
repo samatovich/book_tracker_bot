@@ -47,14 +47,29 @@ async def init_db():
         ''')
         await db.commit()
 
-async def clear_all_data():
+# --- ЖЕКЕ КОЛДОНУУЧУНУН ДАННЫЙЫН ТАЗАЛОО ФУНКЦИЯЛАРЫ ---
+
+async def clear_user_logs(user_id: int):
+    """Бир гана ошол колдонуучунун окуган барактарынын тарыхын (логдорду) өчүрөт"""
     async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute("DELETE FROM logs")
-        await db.execute("DELETE FROM categories")
-        await db.execute("DELETE FROM group_members")
-        await db.execute("DELETE FROM groups")
-        await db.execute("DELETE FROM users")
+        await db.execute("DELETE FROM logs WHERE user_id = ?", (user_id,))
         await db.commit()
+
+async def clear_user_full_data(user_id: int):
+    """
+    Бир гана ушул колдонуучунун бардык данныеларын тазалайт:
+    - Өзүнүн окуган барактар тарыхы (logs)
+    - Өзүнүн гана категориялары (categories)
+    - Топтордон чыгуусу (group_members)
+    Башка колдонуучуларга жана топторго эч кандай таасирин тийгизбейт.
+    """
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("DELETE FROM logs WHERE user_id = ?", (user_id,))
+        await db.execute("DELETE FROM categories WHERE user_id = ?", (user_id,))
+        await db.execute("DELETE FROM group_members WHERE user_id = ?", (user_id,))
+        await db.commit()
+
+# --- КОЛДОНУУЧУЛАР ЖАНА КАТЕГОРИЯЛАР ---
 
 async def add_user(user_id: int, username: str, full_name: str):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -89,6 +104,8 @@ async def rename_category_by_title(user_id: int, old_title: str, new_title: str)
             await db.commit()
             return True
 
+# --- ТОПТОР МЕНЕН ИШТӨӨ ---
+
 async def generate_unique_pin(db):
     chars = string.ascii_uppercase + string.digits
     while True:
@@ -113,9 +130,12 @@ async def create_group_with_categories(admin_id: int, group_name: str, category_
         )
         
         for cat_name in category_names:
+            c_title = cat_name.strip()
+            if not c_title:
+                continue
             await db.execute(
                 "INSERT INTO categories (user_id, group_id, title) VALUES (?, ?, ?)",
-                (admin_id, group_id, cat_name.strip())
+                (admin_id, group_id, c_title)
             )
         await db.commit()
     return pin
@@ -128,7 +148,7 @@ async def join_group_by_pin(user_id: int, pin: str):
                 return False, "❌ ПИН-код ката же табылган жок!"
             
             group_id, admin_id = group
-            
+
         await db.execute(
             "INSERT OR IGNORE INTO group_members (group_id, user_id) VALUES (?, ?)",
             (group_id, user_id)
@@ -141,10 +161,17 @@ async def join_group_by_pin(user_id: int, pin: str):
             admin_cats = await cursor.fetchall()
             
         for cat in admin_cats:
-            await db.execute(
-                "INSERT INTO categories (user_id, group_id, title) VALUES (?, ?, ?)",
-                (user_id, group_id, cat[0])
-            )
+            c_title = cat[0]
+            # Кайталанып кошулуп калуудан коргоо (эгер мурда кошулган болсо кайра кошулбайт)
+            async with db.execute(
+                "SELECT id FROM categories WHERE user_id = ? AND group_id = ? AND title = ?",
+                (user_id, group_id, c_title)
+            ) as check_cursor:
+                if not await check_cursor.fetchone():
+                    await db.execute(
+                        "INSERT INTO categories (user_id, group_id, title) VALUES (?, ?, ?)",
+                        (user_id, group_id, c_title)
+                    )
         await db.commit()
         return True, "✅ Топтун категориялары ийгиликтүү кошулду!"
 
@@ -155,6 +182,8 @@ async def get_user_categories(user_id: int):
             (user_id,)
         ) as cursor:
             return await cursor.fetchall()
+
+# --- ЛОГДОР МЕНЕН ИШТӨӨ ---
 
 async def log_pages(user_id: int, category_id: int, pages: int):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -180,6 +209,8 @@ async def delete_log(log_id: int):
             (log_id,)
         )
         await db.commit()
+
+# --- СТАТИСТИКА ЖАНА ОТЧЕТТОР ---
 
 async def get_monthly_category_summary(user_id: int, year: int, month: int):
     month_str = f"{year}-{month:02d}"
@@ -231,6 +262,7 @@ async def get_category_logs_by_month(user_id: int, category_id: int, year: int, 
         return cat_title, logs, total
 
 # --- ДАТА АРАЛЫГЫ МЕНЕН ЭКСПОРТ КЫЛУУ ---
+
 async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, end_date: str = None):
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute("SELECT id, name, pin FROM groups WHERE admin_id = ?", (admin_id,)) as cursor:
