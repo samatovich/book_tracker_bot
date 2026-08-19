@@ -330,4 +330,12 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
 
             result_groups.append(group_data)
 
+async def clear_group_data(group_id: int):
+    """Бир гана белгилүү бир топтун маалыматтарын тазалайт, жеке категорияларга тийбейт"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
+        await db.execute("DELETE FROM categories WHERE group_id = ?", (group_id,))
+        await db.execute("DELETE FROM groups WHERE id = ?", (group_id,))
+        await db.commit()
+
         return result_groups
