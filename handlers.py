@@ -41,8 +41,9 @@ def cancel_kb():
         resize_keyboard=True
     )
 
-@router.message(Command("reset_baza"))
-async def cmd_reset_baza(message: types.Message, state: FSMContext):
+# --- РЕСЕТ КОМАНДАСЫ (/reset болуп өзгөртүлдү) ---
+@router.message(Command("reset"))
+async def cmd_reset(message: types.Message, state: FSMContext):
     await state.clear()
     await db.clear_all_data()
     await db.add_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
@@ -94,7 +95,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         "• `/make_admin` — Жаңы топ жана конкурс түзүү (ПИН-код берет).\n"
         "• `/admin` — Конкурс аралыгындагы датаны тандап, толук Excel отчет алуу.\n\n"
         "⚙️ **Кызматтык командалар:**\n"
-        "• `/reset_baza` — Базаны толук тазалоо (сак болуңуз!)."
+        "• `/reset` — Базаны толук тазалоо (сак болуңуз!)."
     )
     await message.answer(start_text, parse_mode="Markdown", reply_markup=main_kb())
 
