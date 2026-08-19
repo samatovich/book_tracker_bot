@@ -17,6 +17,7 @@ async def set_bot_commands(bot: Bot):
         BotCommand(command="admin", description="Статистиканы Excelде жүктөө"),
         BotCommand(command="rename", description="Категория атын өзгөртүү"),
         BotCommand(command="cancel", description="Процессти жокко чыгаруу"),
+        BotCommand(command="reset", description="Базаны тазалоо"),
     ]
     await bot.set_my_commands(commands)
 
