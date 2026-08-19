@@ -78,6 +78,14 @@ async def clear_user_full_data(user_id: int):
         await db.execute("DELETE FROM group_members WHERE user_id = ?", (user_id,))
         await db.commit()
 
+async def clear_group_data(group_id: int):
+    """Бир гана белгилүү бир топтун маалыматтарын тазалайт, жеке категорияларга тийбейт"""
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
+        await db.execute("DELETE FROM categories WHERE group_id = ?", (group_id,))
+        await db.execute("DELETE FROM groups WHERE id = ?", (group_id,))
+        await db.commit()
+
 # --- КОЛДОНУУЧУЛАР ЖАНА КАТЕГОРИЯЛАР ---
 
 async def add_user(user_id: int, username: str, full_name: str):
@@ -269,7 +277,7 @@ async def get_category_logs_by_month(user_id: int, category_id: int, year: int, 
 
         return cat_title, logs, total
 
-# --- ДАТА АРАЛЫГЫ МЕНЕН ЭКСПОРТ КЫЛУУ ---
+# --- ДАТА АРАЛЫГЫ МЕНЕН ЭКСПОРТ КЫЛУУ (ОҢДОЛДО) ---
 
 async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, end_date: str = None):
     async with aiosqlite.connect(DB_NAME) as db:
@@ -281,8 +289,10 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
 
         result_groups = []
         for g_id, g_name, g_pin in groups:
-            async with db.execute("SELECT id, title FROM categories WHERE group_id = ? AND user_id = ?", (g_id, admin_id)) as cursor:
-                cats = await cursor.fetchall()
+            # Админ түзгөн негизги категория аталыштарын алуу
+            async with db.execute("SELECT title FROM categories WHERE group_id = ? AND user_id = ?", (g_id, admin_id)) as cursor:
+                cats_rows = await cursor.fetchall()
+                cat_titles = [c[0] for c in cats_rows]
             
             async with db.execute('''
                 SELECT u.full_name, u.username, u.id
@@ -295,7 +305,7 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
             group_data = {
                 'name': g_name,
                 'pin': g_pin,
-                'categories': [c[1] for c in cats],
+                'categories': cat_titles,
                 'rows': []
             }
 
@@ -307,21 +317,23 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
                     'total': 0
                 }
                 m_total = 0
-                for _, c_title in cats:
+                
+                for c_title in cat_titles:
                     query = '''
                         SELECT SUM(l.pages) 
                         FROM logs l 
                         JOIN categories c ON l.category_id = c.id
-                        WHERE l.user_id = ? AND c.title = ? AND c.group_id = ?
+                        WHERE l.user_id = ? AND c.title = ?
                     '''
-                    params = [m_id, c_title, g_id]
+                    params = [m_id, c_title]
 
                     if start_date and end_date:
                         query += " AND date(l.created_at) >= date(?) AND date(l.created_at) <= date(?)"
                         params.extend([start_date, end_date])
 
                     async with db.execute(query, params) as cursor:
-                        p = (await cursor.fetchone())[0] or 0
+                        res = await cursor.fetchone()
+                        p = res[0] if (res and res[0]) else 0
                         row['cats_pages'].append(p)
                         m_total += p
 
@@ -329,13 +341,5 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
                 group_data['rows'].append(row)
 
             result_groups.append(group_data)
-
-async def clear_group_data(group_id: int):
-    """Бир гана белгилүү бир топтун маалыматтарын тазалайт, жеке категорияларга тийбейт"""
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
-        await db.execute("DELETE FROM categories WHERE group_id = ?", (group_id,))
-        await db.execute("DELETE FROM groups WHERE id = ?", (group_id,))
-        await db.commit()
 
         return result_groups
