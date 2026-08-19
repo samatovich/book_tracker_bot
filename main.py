@@ -7,7 +7,7 @@ from aiohttp import web
 import database as db
 from handlers import router
 
-BOT_TOKEN = "8902617824:AAFYW3P5sw_vYPpZRV2FcIfZCEKVw6HKmck"
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 
 async def set_bot_commands(bot: Bot):
     commands = [
