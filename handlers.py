@@ -41,19 +41,13 @@ def cancel_kb():
         resize_keyboard=True
     )
 
-# --- РЕСЕТ КОМАНДАСЫ (/reset болуп өзгөртүлдү) ---
-# --- РЕСЕТ КОМАНДАСЫ ---
 @router.message(Command("reset"))
 @router.message(F.text.startswith("/reset"))
 async def cmd_reset(message: types.Message, state: FSMContext):
     try:
         await state.clear()
-        
-        # Колдонуучунун бир гана жеке данныеларын тазалайт
-        # (Башка колдонуучуларга да, топторго да тийбейт)
         await db.clear_user_full_data(message.from_user.id)
         
-        # Колдонуучуну базага кайра каттоо
         await db.add_user(
             message.from_user.id, 
             message.from_user.username, 
@@ -91,7 +85,6 @@ async def cmd_rename(message: types.Message):
     else:
         await message.answer(f"❌ «**{old_title}**» деген категория табылган жок.", parse_mode="Markdown")
 
-# --- ЖАҢЫЛАНГАН САЛАМДАШУУ ТЕКСТИ ---
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext):
     await state.clear()
@@ -110,7 +103,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         "• `/make_admin` — Жаңы топ жана конкурс түзүү (ПИН-код берет).\n"
         "• `/admin` — Конкурс аралыгындагы датаны тандап, толук Excel отчет алуу.\n\n"
         "⚙️ **Кызматтык командалар:**\n"
-        "• `/reset` — Базаны толук тазалоо (сак болуңуз!)."
+        "• `/reset` — Жеке маалыматтарды тазалоо."
     )
     await message.answer(start_text, parse_mode="Markdown", reply_markup=main_kb())
 
@@ -155,7 +148,7 @@ async def cmd_admin_panel(message: types.Message):
         [InlineKeyboardButton(text="♾ Бардык убакыт", callback_data="admdate_all")],
         [InlineKeyboardButton(text="✏️ Өзүм дата киргизем (Конкурс үчүн)", callback_data="admdate_custom")]
     ])
-    await message.answer("📊 **кайсы дата аралыгындагы статистика керек?**", reply_markup=kb)
+    await message.answer("📊 **Кайсы дата аралыгындагы статистика керек?**", reply_markup=kb)
 
 @router.callback_query(F.data.startswith("admdate_"))
 async def process_admin_date_select(callback: types.CallbackQuery, state: FSMContext):
@@ -207,7 +200,7 @@ async def process_custom_date_range(message: types.Message, state: FSMContext):
 async def generate_and_send_excel(message: types.Message, admin_id: int, start_date: str = None, end_date: str = None):
     groups_data = await db.get_admin_excel_data_by_range(admin_id, start_date, end_date)
     if not groups_data:
-        await message.answer("Сизде азырынча активдүү топтор жок же тандалган дата аралыгында окулган беттер табылган жок.", reply_markup=main_kb())
+        await message.answer("⚠️ **Азырынча сизде активдүү топтор табылган жок.**\nКайрадан `/make_admin` аркылуу топ түзүңүз.", reply_markup=main_kb())
         return
 
     wb = openpyxl.Workbook()
