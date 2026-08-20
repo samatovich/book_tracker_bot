@@ -92,20 +92,151 @@ async def cmd_start(message: types.Message, state: FSMContext):
     
     user_name = message.from_user.first_name
     start_text = (
-        f"Саламатсызбы, {user_name}! 👋\n\n"
-        "📖 **«Book Tracker» ботуна кош келиңиз!**\n\n"
-        "Бул бот китеп окуу адаттарыңызды калыптандырууга жана **окуу конкурстарын/мелдештерин** уюштурууга жардам берет.\n\n"
-        "👤 **Жөнөкөй колдонуучулар үчүн:**\n"
-        "• Күн сайын окуган беттерди киргизүү.\n"
-        "• `/pin <код>` — Конкурска же топко кошулуу.\n"
-        "• `/rename <эски> <жаңы>` — Категория атын өзгөртүү.\n\n"
-        "👑 **Админдер/Уюштуруучулар үчүн:**\n"
-        "• `/make_admin` — Жаңы топ жана конкурс түзүү (ПИН-код берет).\n"
-        "• `/admin` — Конкурс аралыгындагы датаны тандап, толук Excel отчет алуу.\n\n"
-        "⚙️ **Кызматтык командалар:**\n"
-        "• `/reset` — Жеке маалыматтарды тазалоо."
+        f"Ассалому алейкум жана саламатсызбы, {user_name}! 👋📚\n\n"
+        "✨ **«Book Tracker» ботуна кош келиңиз!** ✨\n\n"
+        "Бул бот китеп окуу адаттарыңызды калыптандырууга, күнүмдүк окуган беттерди эсептөөгө "
+        "жана мектепте же топто **окуу мелдештерин/конкурстарын** уюштурууга жардам берет.\n\n"
+        "────────────────────────\n"
+        "📖 **КОЛДОНУУЧУЛАР ҮЧҮН КОМАНДАЛАР:**\n"
+        "• 📂 **Категориялар** — Окуган китебиңиздин/категорияңыздын атын тандап, окуган беттерди киргизүү.\n"
+        "• 📊 **Статистика** — Айлар боюнча канча бет окуганыңызды жана ар бир категориянын деталдуу маалыматын көрүү.\n"
+        "• `/groups` — Сиз мүчө болгон топтордун тизмесин көрүү жана топтон чыгуу (чыгуудан мурда ушул топ боюнча Excel отчетун жүктөп алсаңыз болот).\n"
+        "• `/pin <код>` — Мугалим же уюштуруучу берген ПИН-код аркылуу мелдешке кошулуу (Мисалы: `/pin K7X9W2`).\n"
+        "• `/rename <эски> <жаңы>` — Категориянын атын өзгөртүү.\n\n"
+        "👑 **АДМИНДЕР / УЮШТУРУУЧУЛАР ҮЧҮН:**\n"
+        "• `/make_admin` — Жаңы топ/конкурс түзүү жана катышуучулар үчүн ПИН-код алуу.\n"
+        "• `/admin` — Конкурстун жүрүшүн көзөмөлдөө жана катышуучулардын статистикасын Excel форматында жүктөө.\n\n"
+        "⚙️ **КЫЗМАТТЫК КОМАНДАЛАР:**\n"
+        "• `/cancel` — Башталган процессти жокко чыгаруу.\n"
+        "• `/reset` — Жеке маалыматтарды жана тарыхты тазалоо.\n"
+        "────────────────────────\n"
+        "🚀 *Келгиле, чогуу китеп дүйнөсүнө сүңгүп, билимибизди арттыралы!*"
     )
     await message.answer(start_text, parse_mode="Markdown", reply_markup=main_kb())
+
+# --- ТОПТОР ДИЗМЕСИ ЖАНА ГРУППАДАН ЧЫГУУ ---
+@router.message(Command("groups"))
+async def cmd_my_groups(message: types.Message):
+    groups = await db.get_user_groups(message.from_user.id)
+    if not groups:
+        await message.answer("ℹ️ **Сиз азырынча эч бир топко кошула элексиз.**\nПИН-код аркылуу кошулуу үчүн: `/pin <код>`", parse_mode="Markdown")
+        return
+    
+    text = "👥 **Сиз мүчө болгон топтор:**\n\n"
+    inline_keyboard = []
+    
+    for g_id, g_name, g_pin, is_admin in groups:
+        role = "👑 Админ" if is_admin else "👤 Катышуучу"
+        text += f"• **{g_name}** (PIN: `{g_pin}`) — {role}\n"
+        inline_keyboard.append([
+            InlineKeyboardButton(text=f"🚪 «{g_name}» тобунан чыгуу", callback_data=f"leavegrp_confirm_{g_id}")
+        ])
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
+    await message.answer(text, parse_mode="Markdown", reply_markup=kb)
+
+@router.callback_query(F.data.startswith("leavegrp_confirm_"))
+async def process_leave_group_confirm(callback: types.CallbackQuery):
+    group_id = int(callback.data.split("_")[2])
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📥 Excel отчетун алуу", callback_data=f"leavegrp_excel_{group_id}")
+        ],
+        [
+            InlineKeyboardButton(text="✅ Ооба, толугу менен чыгуу", callback_data=f"leavegrp_do_{group_id}"),
+            InlineKeyboardButton(text="❌ Жок, калуу", callback_data="leavegrp_cancel")
+        ]
+    ])
+    
+    await callback.message.edit_text(
+        "⚠️ **Топтон чыгууну каалайсызбы?**\n\n"
+        "• Топтон чыкканыңызда ушул топтун категориялары жана киргизилген беттериңиз сиздин телефонуңуздан өчүрүлөт.\n"
+        "• Бирок, сиздин ушул убакка чейинки статистикаңыз конкурстун Админинин отчетунда сакталып кала берет.\n"
+        "• Чыгуудан мурда ушул топ боюнча өзүңүздүн Excel отчетуңузду жүктөп алсаңыз болот.",
+        parse_mode="Markdown",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("leavegrp_excel_"))
+async def process_leave_group_excel(callback: types.CallbackQuery):
+    group_id = int(callback.data.split("_")[2])
+    user_id = callback.from_user.id
+    
+    group_data = await db.get_user_group_excel_data(user_id, group_id)
+    if not group_data:
+        await callback.message.answer("⚠️ Маалымат табылган жок.")
+        await callback.answer()
+        return
+
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+
+    ws = wb.create_sheet(title="My_Stats")
+    
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
+    thin_border = Border(
+        left=Side(style='thin', color='D9D9D9'),
+        right=Side(style='thin', color='D9D9D9'),
+        top=Side(style='thin', color='D9D9D9'),
+        bottom=Side(style='thin', color='D9D9D9')
+    )
+
+    ws.append([f"👥 Топ: {group_data['name']}", f"PIN: {group_data['pin']}"])
+    ws.append([])
+
+    headers = ["Аты-жөнү", "Юзернейм"] + group_data['categories'] + ["Жалпы"]
+    ws.append(headers)
+
+    header_row_idx = 3
+    total_cols = len(headers)
+
+    for col_num in range(1, total_cols + 1):
+        cell = ws.cell(row=header_row_idx, column=col_num)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    for row in group_data['rows']:
+        row_data = [row['name'], row['username']] + row['cats_pages'] + [row['total']]
+        ws.append(row_data)
+
+    max_row = header_row_idx + len(group_data['rows'])
+    for r in range(header_row_idx, max_row + 1):
+        for c in range(1, total_cols + 1):
+            cell = ws.cell(row=r, column=c)
+            cell.border = thin_border
+            if c > 2:
+                cell.alignment = Alignment(horizontal="center")
+
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or '')) for cell in col)
+        col_letter = openpyxl.utils.get_column_letter(col[0].column)
+        ws.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+    file_stream = io.BytesIO()
+    wb.save(file_stream)
+    file_stream.seek(0)
+
+    document = BufferedInputFile(file_stream.read(), filename="my_group_stats.xlsx")
+    await callback.message.answer_document(document, caption="📊 **Ушул топ боюнча жеке Excel статистикаңыз!**")
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("leavegrp_do_"))
+async def process_leave_group_do(callback: types.CallbackQuery):
+    group_id = int(callback.data.split("_")[2])
+    user_id = callback.from_user.id
+    
+    await db.leave_group_by_user(user_id, group_id)
+    await callback.message.edit_text("✅ **Сиз топтон ийгиликтүү чыктыңыз.**\nУшул топко тиешелүү категориялар сиздин менюңуздан өчүрүлдү.", parse_mode="Markdown")
+    await callback.answer()
+
+@router.callback_query(F.data == "leavegrp_cancel")
+async def process_leave_group_cancel(callback: types.CallbackQuery):
+    await callback.message.edit_text("🔄 **Жокко чыгарылды. Сиз топто калдыңыз.**", parse_mode="Markdown")
+    await callback.answer()
 
 @router.message(Command("pin"))
 async def cmd_pin(message: types.Message):
