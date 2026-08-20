@@ -12,6 +12,7 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 async def set_bot_commands(bot: Bot):
     commands = [
         BotCommand(command="start", description="Ботту баштоо"),
+        BotCommand(command="groups", description="Топтордун тизмеси жана чыгуу"),
         BotCommand(command="pin", description="Топко кошулуу (ПИН-код аркылуу)"),
         BotCommand(command="make_admin", description="Жаңы топ түзүү"),
         BotCommand(command="admin", description="Статистиканы Excelде жүктөө"),
