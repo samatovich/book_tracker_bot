@@ -50,7 +50,6 @@ async def init_db():
 # --- БАЗАНЫ ЖАНА ДАННЫЙЛАРДЫ ТАЗАЛОО ФУНКЦИЯЛАРЫ ---
 
 async def clear_all_data():
-    """Маалымат базасындагы бардык таблицаларды толугу менен тазалайт"""
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("DELETE FROM users")
         await db.execute("DELETE FROM categories")
@@ -60,18 +59,11 @@ async def clear_all_data():
         await db.commit()
 
 async def clear_user_logs(user_id: int):
-    """Бир гана ошол колдонуучунун окуган барактарынын тарыхын (логдорду) өчүрөт"""
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("DELETE FROM logs WHERE user_id = ?", (user_id,))
         await db.commit()
 
 async def clear_user_full_data(user_id: int):
-    """
-    Бир гана ушул колдонуучунун бардык данныеларын тазалайт:
-    - Өзүнүн окуган барактар тарыхы (logs)
-    - Өзүнүн гана категориялары (categories)
-    - Топтордон чыгуусу (group_members)
-    """
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("DELETE FROM logs WHERE user_id = ?", (user_id,))
         await db.execute("DELETE FROM categories WHERE user_id = ?", (user_id,))
@@ -79,7 +71,6 @@ async def clear_user_full_data(user_id: int):
         await db.commit()
 
 async def clear_group_data(group_id: int):
-    """Бир гана белгилүү бир топтун маалыматтарын тазалайт, жеке категорияларга тийбейт"""
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("DELETE FROM group_members WHERE group_id = ?", (group_id,))
         await db.execute("DELETE FROM categories WHERE group_id = ?", (group_id,))
@@ -107,7 +98,7 @@ async def create_user_category(user_id: int, title: str):
 async def rename_category_by_title(user_id: int, old_title: str, new_title: str):
     async with aiosqlite.connect(DB_NAME) as db:
         async with db.execute(
-            "SELECT id FROM categories WHERE user_id = ? AND title = ?",
+            "SELECT id FROM categories WHERE user_id = ? AND LOWER(TRIM(title)) = LOWER(TRIM(?))",
             (user_id, old_title)
         ) as cursor:
             cat = await cursor.fetchone()
@@ -159,7 +150,7 @@ async def create_group_with_categories(admin_id: int, group_name: str, category_
 
 async def join_group_by_pin(user_id: int, pin: str):
     async with aiosqlite.connect(DB_NAME) as db:
-        async with db.execute("SELECT id, admin_id FROM groups WHERE pin = ?", (pin.upper(),)) as cursor:
+        async with db.execute("SELECT id, admin_id FROM groups WHERE pin = ?", (pin.upper().strip(),)) as cursor:
             group = await cursor.fetchone()
             if not group:
                 return False, "❌ ПИН-код ката же табылган жок!"
@@ -172,16 +163,16 @@ async def join_group_by_pin(user_id: int, pin: str):
         )
             
         async with db.execute(
-            "SELECT title FROM categories WHERE group_id = ? AND user_id = ?",
-            (group_id, admin_id)
+            "SELECT DISTINCT title FROM categories WHERE group_id = ?",
+            (group_id,)
         ) as cursor:
             admin_cats = await cursor.fetchall()
             
         for cat in admin_cats:
             c_title = cat[0]
             async with db.execute(
-                "SELECT id FROM categories WHERE user_id = ? AND group_id = ? AND title = ?",
-                (user_id, group_id, c_title)
+                "SELECT id FROM categories WHERE user_id = ? AND LOWER(TRIM(title)) = LOWER(TRIM(?))",
+                (user_id, c_title)
             ) as check_cursor:
                 if not await check_cursor.fetchone():
                     await db.execute(
@@ -277,11 +268,10 @@ async def get_category_logs_by_month(user_id: int, category_id: int, year: int, 
 
         return cat_title, logs, total
 
-# --- ДАТА АРАЛЫГЫ МЕНЕН ЭКСПОРТ КЫЛУУ (ОҢДОЛДО) ---
+# --- ДАТА АРАЛЫГЫ МЕНЕН ЭКСПОРТ КЫЛУУ (ТУУРАЛАНГАН) ---
 
 async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, end_date: str = None):
     async with aiosqlite.connect(DB_NAME) as db:
-        # 1. Админ башкарган топторду табуу
         async with db.execute("SELECT id, name, pin FROM groups WHERE admin_id = ?", (admin_id,)) as cursor:
             groups = await cursor.fetchall()
         
@@ -290,7 +280,7 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
 
         result_groups = []
         for g_id, g_name, g_pin in groups:
-            # 2. Ошол топко тиешелүү БАРДЫК уникалдуу категория аталыштарын алуу
+            # Топко тиешелүү категория аталыштарын аныктоо
             async with db.execute(
                 "SELECT DISTINCT title FROM categories WHERE group_id = ?", 
                 (g_id,)
@@ -298,7 +288,7 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
                 cats_rows = await cursor.fetchall()
                 cat_titles = [c[0] for c in cats_rows if c[0]]
 
-            # Эгер group_id менен табылбаса, админдин өзүнүн категорияларын текшерүү
+            # Эгер group_id бош болсо, админдин категорияларынан алуу
             if not cat_titles:
                 async with db.execute(
                     "SELECT DISTINCT title FROM categories WHERE user_id = ?", 
@@ -307,7 +297,6 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
                     cats_rows = await cursor.fetchall()
                     cat_titles = [c[0] for c in cats_rows if c[0]]
 
-            # 3. Топтун мүчөлөрүн табуу
             async with db.execute('''
                 SELECT u.full_name, u.username, u.id
                 FROM group_members gm 
@@ -333,7 +322,6 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
                 m_total = 0
                 
                 for c_title in cat_titles:
-                    # Регистрге (баш/кичине тамгага) жана пробелдерге көз карандысыз издөө
                     query = '''
                         SELECT SUM(l.pages) 
                         FROM logs l 
