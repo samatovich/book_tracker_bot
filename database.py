@@ -281,6 +281,7 @@ async def get_category_logs_by_month(user_id: int, category_id: int, year: int, 
 
 async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, end_date: str = None):
     async with aiosqlite.connect(DB_NAME) as db:
+        # 1. Админ башкарган топторду табуу
         async with db.execute("SELECT id, name, pin FROM groups WHERE admin_id = ?", (admin_id,)) as cursor:
             groups = await cursor.fetchall()
         
@@ -289,11 +290,24 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
 
         result_groups = []
         for g_id, g_name, g_pin in groups:
-            # Админ түзгөн негизги категория аталыштарын алуу
-            async with db.execute("SELECT title FROM categories WHERE group_id = ? AND user_id = ?", (g_id, admin_id)) as cursor:
+            # 2. Ошол топко тиешелүү БАРДЫК уникалдуу категория аталыштарын алуу
+            async with db.execute(
+                "SELECT DISTINCT title FROM categories WHERE group_id = ?", 
+                (g_id,)
+            ) as cursor:
                 cats_rows = await cursor.fetchall()
-                cat_titles = [c[0] for c in cats_rows]
-            
+                cat_titles = [c[0] for c in cats_rows if c[0]]
+
+            # Эгер group_id менен табылбаса, админдин өзүнүн категорияларын текшерүү
+            if not cat_titles:
+                async with db.execute(
+                    "SELECT DISTINCT title FROM categories WHERE user_id = ?", 
+                    (admin_id,)
+                ) as cursor:
+                    cats_rows = await cursor.fetchall()
+                    cat_titles = [c[0] for c in cats_rows if c[0]]
+
+            # 3. Топтун мүчөлөрүн табуу
             async with db.execute('''
                 SELECT u.full_name, u.username, u.id
                 FROM group_members gm 
@@ -319,11 +333,12 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
                 m_total = 0
                 
                 for c_title in cat_titles:
+                    # Регистрге (баш/кичине тамгага) жана пробелдерге көз карандысыз издөө
                     query = '''
                         SELECT SUM(l.pages) 
                         FROM logs l 
                         JOIN categories c ON l.category_id = c.id
-                        WHERE l.user_id = ? AND c.title = ?
+                        WHERE l.user_id = ? AND LOWER(TRIM(c.title)) = LOWER(TRIM(?))
                     '''
                     params = [m_id, c_title]
 
