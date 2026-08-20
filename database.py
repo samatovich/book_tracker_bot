@@ -190,6 +190,88 @@ async def get_user_categories(user_id: int):
         ) as cursor:
             return await cursor.fetchall()
 
+# --- ТОПТОРДОН ЧЫГУУ ЖАНА ЖЕКЕ ТОП Статистикасы ---
+
+async def get_user_groups(user_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute('''
+            SELECT g.id, g.name, g.pin, (g.admin_id = ?) as is_admin
+            FROM groups g
+            JOIN group_members gm ON g.id = gm.group_id
+            WHERE gm.user_id = ?
+        ''', (user_id, user_id)) as cursor:
+            return await cursor.fetchall()
+
+async def get_user_group_excel_data(user_id: int, group_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT name, pin FROM groups WHERE id = ?", (group_id,)) as cursor:
+            group = await cursor.fetchone()
+        if not group:
+            return None
+        
+        g_name, g_pin = group
+
+        async with db.execute("SELECT DISTINCT title FROM categories WHERE group_id = ?", (group_id,)) as cursor:
+            cat_rows = await cursor.fetchall()
+            cat_titles = [c[0] for c in cat_rows if c[0]]
+
+        if not cat_titles:
+            async with db.execute("SELECT DISTINCT title FROM categories WHERE user_id = ?", (user_id,)) as cursor:
+                cat_rows = await cursor.fetchall()
+                cat_titles = [c[0] for c in cat_rows if c[0]]
+
+        async with db.execute("SELECT full_name, username FROM users WHERE id = ?", (user_id,)) as cursor:
+            u_row = await cursor.fetchone()
+            u_name = u_row[0] if u_row else "Колдонуучу"
+            u_uname = f"@{u_row[1]}" if (u_row and u_row[1]) else "жок"
+
+        row = {
+            'name': u_name,
+            'username': u_uname,
+            'cats_pages': [],
+            'total': 0
+        }
+        m_total = 0
+
+        for c_title in cat_titles:
+            query = '''
+                SELECT SUM(l.pages) 
+                FROM logs l 
+                JOIN categories c ON l.category_id = c.id
+                WHERE l.user_id = ? AND LOWER(TRIM(c.title)) = LOWER(TRIM(?))
+            '''
+            async with db.execute(query, (user_id, c_title)) as cursor:
+                res = await cursor.fetchone()
+                p = res[0] if (res and res[0]) else 0
+                row['cats_pages'].append(p)
+                m_total += p
+
+        row['total'] = m_total
+
+        return {
+            'name': g_name,
+            'pin': g_pin,
+            'categories': cat_titles,
+            'rows': [row]
+        }
+
+async def leave_group_by_user(user_id: int, group_id: int):
+    async with aiosqlite.connect(DB_NAME) as db:
+        # group_members'ден колдонуучуну өчүрүү
+        await db.execute("DELETE FROM group_members WHERE group_id = ? AND user_id = ?", (group_id, user_id))
+        
+        # Колдонуучунун ушул топко тиешелүү категорияларын табуу жана өчүрүү
+        async with db.execute("SELECT id FROM categories WHERE user_id = ? AND group_id = ?", (user_id, group_id)) as cursor:
+            cats = await cursor.fetchall()
+            cat_ids = [c[0] for c in cats]
+
+        for cid in cat_ids:
+            # Логдорду өчүрүү (колдонуучунун телефонунан өчүрүлөт)
+            await db.execute("DELETE FROM logs WHERE category_id = ?", (cid,))
+            await db.execute("DELETE FROM categories WHERE id = ?", (cid,))
+
+        await db.commit()
+
 # --- ЛОГДОР МЕНЕН ИШТӨӨ ---
 
 async def log_pages(user_id: int, category_id: int, pages: int):
@@ -313,6 +395,7 @@ async def get_admin_excel_data_by_range(admin_id: int, start_date: str = None, e
             }
 
             for m_name, m_user, m_id in members:
+                # Ар бир топтун мүчөсүнүн маалыматтарын сактоочу сөздүк (dict)
                 row = {
                     'name': m_name,
                     'username': f"@{m_user}" if m_user else "жок",
